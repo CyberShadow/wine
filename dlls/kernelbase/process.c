@@ -1346,33 +1346,54 @@ BOOL WINAPI DECLSPEC_HOTPATCH SetEnvironmentStringsW( WCHAR *env )
 DWORD WINAPI DECLSPEC_HOTPATCH GetEnvironmentVariableA( LPCSTR name, LPSTR value, DWORD size )
 {
     UNICODE_STRING us_name, us_value;
-    PWSTR valueW;
     NTSTATUS status;
     DWORD len, ret;
 
-    /* limit the size to sane values */
-    size = min( size, 32767 );
-    if (!(valueW = HeapAlloc( GetProcessHeap(), 0, size * sizeof(WCHAR) ))) return 0;
+    if (!RtlCreateUnicodeStringFromAsciiz( &us_name, name ))
+        return 0;
 
-    RtlCreateUnicodeStringFromAsciiz( &us_name, name );
+    ret = 0;
     us_value.Length = 0;
-    us_value.MaximumLength = (size ? size - 1 : 0) * sizeof(WCHAR);
-    us_value.Buffer = valueW;
-
+    us_value.MaximumLength = 0;
+    us_value.Buffer = NULL;
     status = RtlQueryEnvironmentVariable_U( NULL, &us_name, &us_value );
-    len = us_value.Length / sizeof(WCHAR);
-    if (status == STATUS_BUFFER_TOO_SMALL) ret = len + 1;
-    else if (!set_ntstatus( status )) ret = 0;
-    else if (!size) ret = len + 1;
-    else
+    if (status != STATUS_BUFFER_TOO_SMALL && !set_ntstatus(status))
+        goto cleanup;
+
+    if (us_value.Length)
     {
-        if (len) WideCharToMultiByte( CP_ACP, 0, valueW, len + 1, value, size, NULL, NULL );
+        if (!(us_value.Buffer = HeapAlloc( GetProcessHeap(), 0, us_value.Length )))
+            goto cleanup;
+        us_value.MaximumLength = us_value.Length;
+        status = RtlQueryEnvironmentVariable_U( NULL, &us_name, &us_value );
+        if (!set_ntstatus( status ))
+            goto cleanup;
+
+        len = WideCharToMultiByte( CP_ACP, 0, us_value.Buffer, us_value.Length / sizeof(WCHAR),
+                                   NULL, 0, NULL, NULL );
+        if (!len)
+            goto cleanup;
+    }
+    else
+        len = 0; /* an empty W string is always an empty A string */
+
+    if (len + 1 <= size)
+    {
+        if (len)
+        {
+            if (!WideCharToMultiByte( CP_ACP, 0, us_value.Buffer, us_value.Length / sizeof(WCHAR),
+                                      value, len, NULL, NULL ))
+                goto cleanup;
+        }
         value[len] = 0;
         ret = len;
     }
+    else
+        ret = len + 1;
 
+cleanup:
+    if (us_value.Buffer) HeapFree( GetProcessHeap(), 0, us_value.Buffer );
     RtlFreeUnicodeString( &us_name );
-    HeapFree( GetProcessHeap(), 0, valueW );
     return ret;
 }
 

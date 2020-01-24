@@ -320,6 +320,84 @@ static void test_GetSetEnvironmentVariableW(void)
     }
 }
 
+static void test_GetSetEnvironmentVariableAW(void)
+{
+    char buf[256];
+    WCHAR bufW[256];
+    BOOL ret;
+    DWORD ret_size;
+    static const char name[] = "\x96\xBC\x91\x4F";
+    static const WCHAR nameW[] = {0x540D, 0x524D, 0};
+    static const char value[] = "\x92\x6C";
+    static const WCHAR valueW[] = {0x5024, 0};
+    static const WCHAR fooW[] = {'f','o','o',0};
+
+    if (GetACP() != 932)
+    {
+        skip("GetACP() == %d, need 932 for A/W tests\n", GetACP());
+        return;
+    }
+
+    /* Write W, read A */
+    ret = SetEnvironmentVariableW(nameW, valueW);
+    if (ret == FALSE && GetLastError()==ERROR_CALL_NOT_IMPLEMENTED)
+    {
+        /* Must be Win9x which doesn't support the Unicode functions */
+        win_skip("SetEnvironmentVariableW is not implemented\n");
+        return;
+    }
+    ok(ret == TRUE,
+       "unexpected error in SetEnvironmentVariableW, GetLastError=%d\n",
+       GetLastError());
+
+    SetLastError(0xdeadbeef);
+    ret_size = GetEnvironmentVariableA(name, NULL, 0);
+    ok(GetLastError() == 0xdeadbeef && ret_size == lstrlenA(value) + 1,
+       "should return length for Shift JIS string but ret_size=%d GetLastError=%d\n",
+       ret_size, GetLastError());
+
+    lstrcpyA(buf, "foo");
+    SetLastError(0xdeadbeef);
+    ret_size = GetEnvironmentVariableA(name, buf, lstrlenA(value) + 1);
+    ok(GetLastError() == 0xdeadbeef && ret_size == lstrlenA(value) && lstrcmpA(buf, value) == 0,
+       "should return Shift JIS string but ret_size=%d GetLastError=%d and buf=%s\n",
+       ret_size, GetLastError(), buf);
+
+    /* Write A, read A/W */
+    ret = SetEnvironmentVariableA(name, value);
+    ok(ret == TRUE,
+       "unexpected error in SetEnvironmentVariableA, GetLastError=%d\n",
+       GetLastError());
+
+    SetLastError(0xdeadbeef);
+    ret_size = GetEnvironmentVariableA(name, NULL, 0);
+    ok(GetLastError() == 0xdeadbeef && ret_size == lstrlenA(value) + 1,
+       "should return length for Shift JIS string but ret_size=%d GetLastError=%d\n",
+       ret_size, GetLastError());
+
+    lstrcpyA(buf, "foo");
+    SetLastError(0xdeadbeef);
+    ret_size = GetEnvironmentVariableA(name, buf, lstrlenA(value) + 1);
+    ok(GetLastError() == 0xdeadbeef && ret_size == lstrlenA(value) && lstrcmpA(buf, value) == 0,
+       "should return Shift JIS string but ret_size=%d GetLastError=%d and buf=%s\n",
+       ret_size, GetLastError(), buf);
+
+    SetLastError(0xdeadbeef);
+    ret_size = GetEnvironmentVariableW(nameW, NULL, 0);
+    ok(GetLastError() == 0xdeadbeef && ret_size == lstrlenW(valueW) + 1,
+       "should return length for UTF-16 string but ret_size=%d GetLastError=%d\n",
+       ret_size, GetLastError());
+
+    lstrcpyW(bufW, fooW);
+    SetLastError(0xdeadbeef);
+    ret_size = GetEnvironmentVariableW(nameW, bufW, lstrlenW(valueW) + 1);
+    ok(GetLastError() == 0xdeadbeef && ret_size == lstrlenW(valueW),
+       "should return UTF-16 string but ret_size=%d GetLastError=%d\n",
+       ret_size, GetLastError());
+    ok_w(GetLastError() == 0xdeadbeef && ret_size == lstrlenW(valueW) && lstrcmpW(bufW, valueW) == 0,
+       "should return UTF-16 string but bufW=%s\n", bufW);
+}
+
 static void test_ExpandEnvironmentStringsA(void)
 {
     const char* value="Long long value";
@@ -720,6 +798,7 @@ START_TEST(environ)
     test_Predefined();
     test_GetSetEnvironmentVariableA();
     test_GetSetEnvironmentVariableW();
+    test_GetSetEnvironmentVariableAW();
     test_ExpandEnvironmentStringsA();
     test_GetComputerName();
     test_GetComputerNameExA();
